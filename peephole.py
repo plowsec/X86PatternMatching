@@ -8,6 +8,7 @@ from miasm.core.locationdb import LocationDB
 from collections import Counter
 from copy import deepcopy, copy
 import pyvex
+import logging
 
 addr_main = 0x08049574
 addr_end_alu_eq = 0x08049657
@@ -19,6 +20,9 @@ main = proj.factory.block(addr_main)
 """
 * restore symbols
 * work with symbols
+todo:
+* register ordering
+* whole program disassembly
 """
 
 known_constants = Counter()
@@ -114,6 +118,7 @@ def canonicalize(instructions):
             allocated_tmp, new_tmp = allocate_tmp(allocated_tmp, ins)
             ins.tmp = new_tmp
 
+            # seems hackish but there is apprently no other way.
             if hasattr(ins.data, "addr") and not ins.data.addr.tag == "Iex_Const":
                 allocated_tmp, new_tmp = allocate_tmp(allocated_tmp, ins.data.addr)
                 # ins.data is an immutable Load object
@@ -168,12 +173,12 @@ def print_canonicalized_sequence(sequence):
     
     print("-"*20)
         
-def gen_histogram():
+def gen_histogram(block):
 
     instructions = []
 
     # filter out the junk
-    for ins in main.vex.statements:
+    for ins in block.vex.statements:
         if ins.tag in ["Ist_IMark"]:
             continue
         
@@ -203,21 +208,71 @@ def gen_histogram():
                 #histogram[tuple(seq)] += 1
                 histogram[prettyprint] += 1
 
-print(known_constants)
+def whole_program_analysis():
 
-gen_histogram()
+    current_block = main
+
+    while True:
+
+        logging.warning("Analyzing pattern in VEX basic block %x-%x",\
+            current_block.vex.instruction_addresses[0],\
+            current_block.vex.instruction_addresses[-1])
+
+        gen_histogram(current_block)
+
+        # todo: find out how to locate the last basic block when no function where found
+        if main.vex.direct_next:
+            last_address = current_block.vex.instruction_addresses[-1]
+
+            if last_address > 0x0804A078:
+                logging.critical("Bad stop, would have gone into an infinite loop")
+                break
+            current_block = proj.factory.block(last_address)
+
+        else:
+            print("End of program")
+            return
+
+
+logging.basicConfig(level=logging.INFO)
+
+whole_program_analysis()
 
 i = 0
-for seq in histogram.most_common():
-    if len(seq[0]) >= 2:
-        i+= 1
-        if i > 40:
+clean_histogram = Counter()
+all_keys = list(histogram.keys())
+filtered = 0
+
+# remove overlapping patterns (slow!)
+for i in range(len(all_keys)):
+    
+    key = all_keys[i]   
+    overlapped = False
+
+    for j in range(len(all_keys)):
+
+        if i == j:
+            continue
+        
+        if key in all_keys[j] and histogram[all_keys[j]] > 1:
+            filtered += 1
+            overlapped = True
             break
-            #pass
 
-        print(f"Pattern found {seq[1]} times:")
-        #print_canonicalized_sequence(seq[0])
-        print(seq[0])
+    if not overlapped:
+        clean_histogram[key] = histogram[key]
 
+    
+if filtered > 0:
+    logging.warning("Filtered %d patterns", filtered)
 
-most_common = histogram.most_common()
+most_common = clean_histogram.most_common()
+
+logging.warning("Identified %d patterns, here are the most interesting ones:", len(clean_histogram))
+for seq in most_common:
+
+    if not seq[1] > 1:
+        break
+    print(f"Pattern found {seq[1]} times:")
+    #print_canonicalized_sequence(seq[0])
+    print(seq[0])
