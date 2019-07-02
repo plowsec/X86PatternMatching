@@ -167,6 +167,7 @@ def canonicalize(instructions):
                 # ins.data is an immutable Load object
                 new_RdTmp = pyvex.expr.RdTmp(new_tmp)
                 ins.data.addr = new_RdTmp
+            
             elif hasattr(ins.data, "addr") and type(ins.data.addr) == pyvex.expr.Const:
                 new_addr = handle_const(ins.data.addr, allocated_addr)
                 ins.data.addr = pyvex.expr.Const(pyvex.const.U32(new_addr))
@@ -195,7 +196,10 @@ def canonicalize(instructions):
                 new_addr = handle_const(ins.addr, allocated_addr)
                 ins.addr = pyvex.expr.Const(pyvex.const.U32(new_addr))
                 #ins.pp()
-        
+            if type(ins.data) == pyvex.expr.Const:
+                new_addr = handle_const(ins.data, allocated_addr)
+                ins.data = pyvex.expr.Const(pyvex.const.U32(new_addr))
+                #ins.pp()   
 
         if hasattr(ins, "offset"):
             allocated_registers, ins.offset = allocate_registers(allocated_registers, ins)
