@@ -26,7 +26,7 @@ def test_register_realloc():
     instructions += [f]
 
     add_op = "Iop_Add32"
-    c = pyvex.const.U32(134542848)
+    c = pyvex.expr.Const(pyvex.const.U32(134542848))
     d = pyvex.expr.RdTmp(72)
     e = pyvex.expr.Binop(add_op, [d,c])
     f = pyvex.stmt.WrTmp(71, e)
@@ -39,7 +39,7 @@ def test_register_realloc():
 
     solution = """t0 = GET:I32(offset=8)
 t1 = Shl32(t0,0x02)
-t2 = Add32(t1,0x0804f600)
+t2 = Add32(t1,0x08000000)
 t3 = LDle:I32(t2)\n"""
 
     # act
@@ -77,27 +77,27 @@ def test_register_realloc2():
     """
     instructions = []
     d = pyvex.const.U32(0x083f5168)
-    e = pyvex.expr.Load("Iend_LE", "Ity_I32", d)
+    e = pyvex.expr.Load("Iend_LE", "Ity_I32", pyvex.expr.Const(d))
     f = pyvex.stmt.WrTmp(67, e)
     instructions += [f]
 
     d = pyvex.expr.RdTmp(67)
-    e = pyvex.stmt.Store(pyvex.const.U32(0x081f4ff0), d, "Iend_LE")
+    e = pyvex.stmt.Store(pyvex.expr.Const(pyvex.const.U32(0x081f4ff0)), d, "Iend_LE")
     instructions += [e]
 
-    d = pyvex.const.U32(0x88049574)
-    e = pyvex.stmt.Store(pyvex.const.U32(0x081f4ff4), d, "Iend_LE")
+    d = pyvex.expr.Const(pyvex.const.U32(0x88049574))
+    e = pyvex.stmt.Store(pyvex.expr.Const(pyvex.const.U32(0x081f4ff4)), d, "Iend_LE")
     instructions += [e]
 
-    d = pyvex.const.U32(0x00000000)
+    d = pyvex.expr.Const(pyvex.const.U32(0x00000000))
     e = pyvex.stmt.Put(d, 8)
     instructions += [e]    
 
-    d = pyvex.const.U32(0x00000000)
+    d = pyvex.expr.Const(pyvex.const.U32(0x00000000))
     e = pyvex.stmt.Put(d, 16)
     instructions += [e]    
 
-    d = pyvex.const.U8(0x081f4ff0)
+    d = pyvex.expr.Const(pyvex.const.U32(0x081f4ff0))
     e = pyvex.expr.Load("Iend_LE", "Ity_I8", d)
     f = pyvex.stmt.WrTmp(70, e)
     instructions += [f]    
@@ -117,12 +117,12 @@ def test_register_realloc2():
     f = pyvex.stmt.WrTmp(72, e)
     instructions += [f]
 
-    solution = """t0 = LDle:I32(0x083f5168)
-STle(0x081f4ff0) = t0
-STle(0x081f4ff4) = 0x88049574
+    solution = """t0 = LDle:I32(0x08000000)
+STle(0x08001000) = t0
+STle(0x08002000) = 0x08003000
 PUT(offset=8) = 0x00000000
 PUT(offset=12) = 0x00000000
-t1 = LDle:I8(0x81f4ff0)
+t1 = LDle:I8(0x08001000)
 PUT(offset=8) = t1
 t2 = GET:I32(offset=8)
 t3 = Shl32(t2,0x02)\n"""
