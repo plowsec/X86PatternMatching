@@ -22,11 +22,12 @@ main = proj.factory.block(addr_main)
 * restore symbols
 * work with symbols
 todo:
-* canonicalize memory addresses
-* register ordering
+* canonicalize memory addresses (done)
+* add filter heuristic: among the most found ones, keep the longest, trim the instructions that does nothing
+* add filter heuristic: if pattern is complete, keep it, discard the others that are similar.
 * whole program disassembly (done) (only for movfuscated binaries)
 * find a valid criteria for automated disassembly stop
-* recognize patterns and put labels
+* recognize patterns and put labels (P1)
 * simplify
 * patterns must be complete:
     - if a register is referenced but not assigned in the pattern, fetch its assignment
@@ -184,7 +185,6 @@ def canonicalize(instructions):
                     elif type(ins.data.args[i]) == pyvex.expr.Const:
                         new_addr = handle_const(ins.data.args[i], allocated_addr)
                         ins.data.args[i] = pyvex.expr.Const(pyvex.const.U32(new_addr))
-                        ins.pp()
             
             new_instructions += [ins]
             continue
@@ -237,6 +237,138 @@ def print_canonicalized_sequence(sequence):
     
     print("-"*20)
         
+
+@dataclass
+class State:
+    state: str
+    id: int
+
+def visit_RdTmp(ins):
+
+    return [State("read", ins.tmp)]
+
+def visit_Binop(ins):
+
+    lhs = ins.args[0]
+    rhs = ins.args[1]
+
+    l = visit_Generic(lhs)
+    r = visit_Generic(rhs)
+
+    return l + r
+
+def visit_Store(ins):
+
+    lhs = visit_Generic(ins.addr)
+    rhs = visit_Generic(ins.data)
+
+    return lhs + rhs
+
+"""
+    returns a list of State objects
+    May be None
+"""
+def visit_Generic(ins):
+
+    ignored = []
+
+    # expects a variable declaration in LHS, maybe
+    # variable read in RHS.
+    if ins.tag == "Ist_WrTmp":
+        
+        lhs = [State("declared", ins.tmp)]
+        return lhs + visit_Generic(ins.data)
+    
+    elif ins.tag == "Iex_Binop":
+
+        return visit_Binop(ins)
+
+    elif ins.tag == "Iex_RdTmp":
+        
+        return visit_RdTmp(ins)
+
+    elif ins.tag == "Ist_Store":
+
+        return visit_Store(ins)
+
+    elif ins.tag == "Ist_Put":
+
+        return visit_Generic(ins.data)
+
+    elif ins.tag == "Iex_Load":
+        
+        return visit_Generic(ins.addr)
+    
+    else:
+
+        if not ins.tag in ignored:
+        
+            ignored += [ins.tag]
+            print(f"Ignoring {ins.tag}")
+
+        return []
+
+"""
+    takes a sequence of states, returns true
+    if the order is valid with respect to the
+    lifecycle of a variable:
+    [unclared, declared, read]
+"""
+def check_state_order(states):
+    pass
+
+"""
+    takes a canonicalized sequence of instructions,
+    tracks all variable declarations and all variables
+    references.
+    Pattern is not complete if a undeclared variable is read,
+    or a declared variable is unused.
+
+    data structure:
+    - we need a collection of variables, with states:
+        * undeclared
+        * read
+        * declared
+    - maybe in a list:
+        * if sequence of states is not [undeclared, declared, read] (order matters), pattern
+        is incomplete.
+"""
+def is_pattern_complete(instructions):
+    
+    variables = {}
+    complete = True
+
+    for ins in instructions:
+        
+        states = visit_Generic(ins)
+
+        for state in states:
+
+            if state is None:
+                continue
+
+            if state.id in variables:
+                variables[state.id] += [state.state]
+            else:
+                variables[state.id] = [state.state]
+
+    for k, v in variables.items():
+
+        if not sorted(v) == v:
+            print(f"Found invalid state order in variable t{k}: {v}")
+            complete = False
+        
+        if not "declared" in v:
+            print(f"Found an uninitialized read in t{k}: {v}")
+            complete = False
+
+        if not "read" in v:
+            print(f"Found unused variable: t{k}")
+            complete = False
+
+    return complete
+
+#         
 def gen_histogram(block):
 
     instructions = []
@@ -261,7 +393,7 @@ def gen_histogram(block):
                 return
 
             seq = canonicalize(instructions[i:i+j+1])
-            if len(seq) > 0:
+            if len(seq) > 0 and is_pattern_complete(seq):
                 prettyprint = ""
                 for x in seq:
                     prettyprint += x.__str__() + "\n"
@@ -316,11 +448,21 @@ def run():
                 continue
             
             if key in all_keys[j] and histogram[all_keys[j]] > 1:
-                filtered += 1
-                overlapped = True
-                break
+                
+                if len(key.split("\n")) <= 4:
+                    filtered += 1
+                    overlapped = True
+                    break
+                else:
+                    occurrences_pattern1 = histogram[key]
+                    occurrences_pattern2 = histogram[all_keys[j]]
+                    if occurrences_pattern1 < occurrences_pattern2:
+                        filtered += 1
+                        overlapped = True
+                        break
 
         if not overlapped:
+
             clean_histogram[key] = histogram[key]
 
         
@@ -328,12 +470,17 @@ def run():
         logging.warning("Filtered %d patterns", filtered)
 
     most_common = clean_histogram.most_common()
+    print(most_common[0])
+    print(most_common[0][0])
+    print(len(most_common[0][0]))
+    print(most_common[0][1])
+    most_common = sorted(clean_histogram.items(), key=lambda x: 200*x[1] + (1-len(x[0])), reverse=True)
 
     logging.warning("Identified %d patterns, here are the most interesting ones:", len(clean_histogram))
     for seq in most_common:
 
         if not seq[1] > 1:
-            break
+            continue
         print(f"Pattern found {seq[1]} times:")
         #print_canonicalized_sequence(seq[0])
         print(seq[0])
