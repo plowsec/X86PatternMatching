@@ -263,7 +263,8 @@ def gen_histogram(block):
             if i + j + 1 > len(instructions):
                 return
 
-            seq = canonicalize(instructions[i:i+j+1])
+            realloc_analysis = ReallocationVisitor(maxlen, proj)
+            seq = realloc_analysis.canonicalize(instructions[i:i+j+1])
             tmp_analysis = TmpTrackingVisitor()
             if len(seq) > 0 and tmp_analysis.is_pattern_complete(seq):
                 prettyprint = ""
