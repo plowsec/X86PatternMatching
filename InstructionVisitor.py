@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from copy import deepcopy
 import pyvex
+import sys
 
 class InstructionVisitor:
 
@@ -9,16 +10,13 @@ class InstructionVisitor:
         return [ins]
 
     def callback_write_tmp(self, ins, parent=None):
+        
         return [ins]
 
     def callback_multi_changes(self, lhs, rhs, parent=None):
-        try:
-            return lhs + rhs
-        except:
-            print(type(lhs))
-            print(type(rhs))
-            raise Exception("bug")
-
+        
+        return lhs + rhs
+     
     def callback_reg(self, ins, parent=None):
         return [ins]
 
@@ -27,7 +25,6 @@ class InstructionVisitor:
 
     def visit_RdTmp(self, ins, parent=None):
 
-        #return [State("read", ins.tmp)]
         return self.callback_read_tmp(ins, parent)
 
     def visit_Binop(self, ins, parent=None):
@@ -40,7 +37,6 @@ class InstructionVisitor:
 
         parent.data.args[0] = l
         parent.data.args[1] = r
-        #return l + r
         return self.callback_multi_changes(l, r, parent)
 
     def visit_Store(self, ins, parent=None):
@@ -56,17 +52,12 @@ class InstructionVisitor:
         reg = self.callback_reg(ins, parent)
         new_data = self.visit_Generic(ins.data, ins)
         ins.data = new_data
-        #return ins
         return self.callback_multi_changes(reg, new_data, ins)
 
 
     def visit_Const(self, ins, parent=None):
         
         return self.callback_offset(ins, parent)
-
-    def visit_Ico_U8(self, ins, parent=None):
-        #return [ins]
-        raise Exception("Not implemented")
 
     def visit_Get(self, ins, parent=None):
         return self.callback_reg(ins, parent)
@@ -77,22 +68,12 @@ class InstructionVisitor:
         ins.addr = new_addr
         return new_addr
 
-    """
-        returns a list of State objects
-        May be None
-    """
     def visit_Generic(self, ins, parent=None):
 
-        # expects a variable declaration in LHS, maybe
-        # variable read in RHS.
         if ins.tag == "Ist_WrTmp":
-            #lhs = [State("declared", ins.tmp)]
             lhs = self.callback_write_tmp(ins, parent)
-            # todo
             rhs = self.visit_Generic(ins.data, parent)
-            #parent.data = rhs
             return self.callback_multi_changes(lhs, rhs, parent)
-
         
         elif ins.tag == "Iex_Binop":
 
@@ -120,9 +101,6 @@ class InstructionVisitor:
         elif ins.tag == "Iex_Const":
             return self.visit_Const(ins, parent)
 
-        elif ins.tag == "Ico_U8":
-            return self.visit_Ico_U8(ins, parent)
-        
         else:
             print("Unhandled instruction type: " + ins.tag)
             return ins
@@ -169,13 +147,7 @@ class ReallocationVisitor(InstructionVisitor):
 
     def allocate_tmp(self, expr):
         
-        try:
-            offset = expr.tmp
-        except:
-            print(type(expr))
-            print(expr.value)
-            print("tag = " + str(expr.tag))
-            raise Exception("bug")
+        offset = expr.tmp
         offsets = list(self.state_tmp.values())
 
         if offset in offsets:
@@ -221,18 +193,6 @@ class ReallocationVisitor(InstructionVisitor):
 
             raise Exception("allocate_addr: no free register left")
 
-    def handle_const(self, addr):
-
-    
-        if type(addr) == pyvex.expr.Const:
-
-            new_addr = self.allocate_addr(addr)
-            return new_addr
-
-        else:
-            raise Exception("Bug not implemented")
-
-
     def callback_read_tmp(self, ins, parent):
         new_tmp = self.allocate_tmp(ins)
         new_RdTmp = pyvex.expr.RdTmp(new_tmp)
@@ -255,8 +215,7 @@ class ReallocationVisitor(InstructionVisitor):
     def callback_offset(self, ins, parent):
 
         if type(ins.con) != pyvex.const.U32:
-            #return ins
-            pass
+            return ins
 
         if ins.con.value == 0:
             return ins
@@ -281,7 +240,6 @@ class ReallocationVisitor(InstructionVisitor):
         
         return new_instructions
 
-
 class TmpTrackingVisitor(InstructionVisitor):
 
     @dataclass
@@ -297,12 +255,12 @@ class TmpTrackingVisitor(InstructionVisitor):
     def callback_write_tmp(self, tmp, parent=None):
         return [TmpTrackingVisitor.State("declared", tmp.tmp)]
 
-    def is_pattern_complete(self, instructions: list) -> bool:
-           
+    def track_data_states(self, instructions: list) -> dict:
+                 
         variables = {}
-        complete = True
 
         for ins in instructions:
+            
             ins = deepcopy(ins)
             states = self.visit_Generic(ins, ins)
 
@@ -317,18 +275,25 @@ class TmpTrackingVisitor(InstructionVisitor):
                 else:
                     variables[state.id] = [state.state]
 
+        return variables
+
+    def is_pattern_complete(self, instructions: list) -> bool:
+           
+        complete = True
+        variables = self.track_data_states(instructions)
+
         for k, v in variables.items():
 
             if not sorted(v) == v:
-                print(f"Found invalid state order in variable t{k}: {v}")
+                print(f"Found invalid state order in variable t{k}: {v}", file=sys.stderr)
                 complete = False
             
             if not "declared" in v:
-                print(f"Found an uninitialized read in t{k}: {v}")
+                print(f"Found an uninitialized read in t{k}: {v}", file=sys.stderr)
                 complete = False
 
             if not "read" in v:
-                print(f"Found unused variable: t{k}")
+                print(f"Found unused variable: t{k}", file=sys.stderr)
                 complete = False
 
         return complete
