@@ -1,6 +1,16 @@
 import pytest
 import pyvex
-from peephole import canonicalize
+#from peephole import canonicalize
+import angr
+from InstructionVisitor import *
+
+addr_main = 0x08049574
+addr_end_alu_eq = 0x08049657
+addr_end_load_jmp_regs = 0x08049731
+
+proj = angr.Project("bin/test_mov_strip.bin", auto_load_libs=False)
+main = proj.factory.block(addr_main)
+maxlen = 20
 
 """
 20 | t73 = GET:I32(eax)
@@ -8,7 +18,7 @@ from peephole import canonicalize
 22 | t71 = Add32(t72,0x0804f600)
 23 | t74 = LDle:I32(t71)
 """
-def test_register_realloc():
+def test_register_realloc1():
 
     # arrange
 
@@ -21,7 +31,7 @@ def test_register_realloc():
     shl_op = "Iop_Shl32"
     c = pyvex.const.U8(2)
     d = pyvex.expr.RdTmp(73)
-    e = pyvex.expr.Binop(shl_op, [d,c])
+    e = pyvex.expr.Binop(shl_op, [d,pyvex.expr.Const(c)])
     f = pyvex.stmt.WrTmp(72, e)
     instructions += [f]
 
@@ -43,11 +53,18 @@ t2 = Add32(t1,0x08000000)
 t3 = LDle:I32(t2)\n"""
 
     # act
-    seq = canonicalize(instructions)
+    #seq = canonicalize(instructions)
+    realloc_analysis = ReallocationVisitor(maxlen, proj)
+    seq = realloc_analysis.canonicalize(instructions)
     result = ""
     for i in seq:
         result += i.__str__() + "\n"
 
+    print("here is the result:")
+    print(result)
+
+    print("Expected:")
+    print(solution)
     # assert
     assert(result == solution)
 
@@ -113,7 +130,7 @@ def test_register_realloc2():
     shl_op = "Iop_Shl32"
     c = pyvex.const.U8(2)
     d = pyvex.expr.RdTmp(73)
-    e = pyvex.expr.Binop(shl_op, [d,c])
+    e = pyvex.expr.Binop(shl_op, [d,pyvex.expr.Const(c)])
     f = pyvex.stmt.WrTmp(72, e)
     instructions += [f]
 
@@ -130,10 +147,17 @@ t3 = Shl32(t2,0x02)\n"""
     for i in instructions:
         i.pp()
     # act
-    seq = canonicalize(instructions)
+    #seq = canonicalize(instructions)
+    realloc_analysis = ReallocationVisitor(maxlen, proj)
+    seq = realloc_analysis.canonicalize(instructions)
     result = ""
     for i in seq:
         result += i.__str__() + "\n"
 
+    print("\nhere is the result:")
+    print(result)
+
+    print("Expected:")
+    print(solution)
     # assert
     assert(result == solution)    
