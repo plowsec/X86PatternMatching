@@ -11,6 +11,8 @@ import pyvex
 import logging
 #from birdseye import eye
 
+from InstructionVisitor import *
+
 addr_main = 0x08049574
 addr_end_alu_eq = 0x08049657
 addr_end_load_jmp_regs = 0x08049731
@@ -138,7 +140,7 @@ def handle_const(addr, allocated_addr):
 #@eye
 def canonicalize(instructions):
     
-    new_instructions = []
+    new_instructions = []  
     available_registers = ['eax', 'ecx', 'edx', 'ebx', 'esi', 'edi']
     allocated_registers = dict.fromkeys(available_registers, -1)
     allocated_tmp = dict.fromkeys(range(maxlen*2), -1)
@@ -238,10 +240,7 @@ def print_canonicalized_sequence(sequence):
     print("-"*20)
         
 
-@dataclass
-class State:
-    state: str
-    id: int
+
 
 def visit_RdTmp(ins):
 
@@ -269,8 +268,6 @@ def visit_Store(ins):
     May be None
 """
 def visit_Generic(ins):
-
-    ignored = []
 
     # expects a variable declaration in LHS, maybe
     # variable read in RHS.
@@ -300,22 +297,9 @@ def visit_Generic(ins):
         return visit_Generic(ins.addr)
     
     else:
-
-        if not ins.tag in ignored:
-        
-            ignored += [ins.tag]
-            print(f"Ignoring {ins.tag}")
-
+        # todo: Get
         return []
 
-"""
-    takes a sequence of states, returns true
-    if the order is valid with respect to the
-    lifecycle of a variable:
-    [unclared, declared, read]
-"""
-def check_state_order(states):
-    pass
 
 """
     takes a canonicalized sequence of instructions,
@@ -393,7 +377,8 @@ def gen_histogram(block):
                 return
 
             seq = canonicalize(instructions[i:i+j+1])
-            if len(seq) > 0 and is_pattern_complete(seq):
+            tmp_analysis = TmpTrackingVisitor()
+            if len(seq) > 0 and tmp_analysis.is_pattern_complete(seq):
                 prettyprint = ""
                 for x in seq:
                     prettyprint += x.__str__() + "\n"

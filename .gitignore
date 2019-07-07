@@ -1,0 +1,16 @@
+.gdb_history
+.vscode/
+__pycache__/
+angr_solution.py
+bin/*
+cfg.dot
+cfg.png
+demov.py
+disass/*
+gist_symbolic_init_state.py
+input_c/*
+nohup.out
+output.txt
+output2.txt
+pattern_detection.py
+sandbox_elf_x86_32.py
